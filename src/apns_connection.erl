@@ -129,22 +129,20 @@ http2_connection(ConnectionName) ->
 -spec push_notification( name()
                        , apns:device_id()
                        , notification()
-                       , apns:headers()) -> apns:response().
+                       , apns:headers()) -> ok.
 push_notification(ConnectionName, DeviceId, Notification, Headers) ->
-  {Timeout, StreamId} =
-    gen_server:call(ConnectionName, {push_notification, DeviceId, Notification, Headers}),
-  wait_response(ConnectionName, Timeout, StreamId).
+  gen_server:cast(ConnectionName, {push_notification, DeviceId, Notification, Headers}).
+  %wait_response(ConnectionName, Timeout, StreamId).
 
 %% @doc Pushes notification to certificate APNs connection.
 -spec push_notification( name()
                        , apns:token()
                        , apns:device_id()
                        , notification()
-                       , apns:headers()) -> apns:response().
+                       , apns:headers()) -> ok.
 push_notification(ConnectionName, Token, DeviceId, Notification, Headers) ->
-  {Timeout, StreamId} =
-    gen_server:call(ConnectionName, {push_notification, Token, DeviceId, Notification, Headers}),
-  wait_response(ConnectionName, Timeout, StreamId).
+  gen_server:cast(ConnectionName, {push_notification, Token, DeviceId, Notification, Headers}).
+  %wait_response(ConnectionName, Timeout, StreamId).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -166,26 +164,21 @@ init({Connection, Client}) ->
   {reply, ok, State}.
 handle_call(http2_connection, _From, #{http2_connection := HTTP2Conn} = State) ->
   {reply, HTTP2Conn, State};
-handle_call( {push_notification, DeviceId, Notification, Headers}
-           , _From
-           , State) ->
-  #{connection := Connection, http2_connection := HTTP2Conn} = State,
-  #{timeout := Timeout} = Connection,
-  StreamId = push(HTTP2Conn, DeviceId, Headers, Notification, Connection),
-  {reply, {Timeout, StreamId}, State};
-handle_call( {push_notification, Token, DeviceId, Notification, HeadersMap}
-           , _From
-           , State) ->
-  #{connection := Connection, http2_connection := HTTP2Conn} = State,
-  Headers = add_authorization_header(HeadersMap, Token),
-  #{timeout := Timeout} = Connection,
-  StreamId = push(HTTP2Conn, DeviceId, Headers, Notification, Connection),
-  {reply, {Timeout, StreamId}, State};
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 
 -spec handle_cast(Request :: term(), State) ->
   {noreply, State}.
+handle_cast({push_notification, DeviceId, Notification, Headers}, State) ->
+  #{connection := Connection, http2_connection := HTTP2Conn} = State,
+  push(HTTP2Conn, DeviceId, Headers, Notification, Connection),
+  {noreply, State};
+handle_cast({push_notification, Token, DeviceId, Notification, HeadersMap}, State) ->
+  #{connection := Connection, http2_connection := HTTP2Conn} = State,
+  Headers = add_authorization_header(HeadersMap, Token),
+  push(HTTP2Conn, DeviceId, Headers, Notification, Connection),
+  {noreply, State};
+
 handle_cast(stop, State) ->
   {stop, normal, State};
 handle_cast(_Request, State) ->
